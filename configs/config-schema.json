@@ -101,6 +101,29 @@
       },
       "additionalProperties": false
     },
+    "models": {
+      "type": "object",
+      "description": "Model routing configuration for multi-provider support",
+      "properties": {
+        "default": {
+          "$ref": "#/$defs/model_spec",
+          "description": "Default model for all phases (e.g., 'ollama,qwen3:32b')"
+        },
+        "phases": {
+          "type": "object",
+          "description": "Per-phase model overrides",
+          "properties": {
+            "pre-recon":     { "$ref": "#/$defs/model_spec" },
+            "recon":         { "$ref": "#/$defs/model_spec" },
+            "vulnerability": { "$ref": "#/$defs/model_spec" },
+            "exploitation":  { "$ref": "#/$defs/model_spec" },
+            "report":        { "$ref": "#/$defs/model_spec" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "login": {
       "type": "object",
       "description": "Deprecated: Use 'authentication' section instead",
@@ -110,10 +133,16 @@
   "anyOf": [
     {"required": ["authentication"]},
     {"required": ["rules"]},
-    {"required": ["authentication", "rules"]}
+    {"required": ["authentication", "rules"]},
+    {"required": ["models"]}
   ],
   "additionalProperties": false,
   "$defs": {
+    "model_spec": {
+      "type": "string",
+      "pattern": "^[a-z]+,[a-zA-Z0-9:./_-]+$",
+      "description": "Model specification in 'provider,model' format (e.g., 'ollama,qwen3:32b', 'anthropic,claude-sonnet-4-5-20250929')"
+    },
     "rule": {
       "type": "object",
       "description": "A single testing rule",

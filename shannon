@@ -37,6 +37,12 @@ Options for 'start':
   OUTPUT=<path>          Output directory for reports (default: ./audit-logs/)
   PIPELINE_TESTING=true  Use minimal prompts for fast testing
   ROUTER=true            Route requests through claude-code-router (multi-model support)
+  OLLAMA=true            Use local Ollama (qwen3:32b) — zero API cost
+  MODEL_PRE_RECON=<spec> Override model for pre-recon phase (format: provider,model)
+  MODEL_RECON=<spec>     Override model for recon phase
+  MODEL_VULNERABILITY=<spec>  Override model for vulnerability phase
+  MODEL_EXPLOITATION=<spec>   Override model for exploitation phase
+  MODEL_REPORT=<spec>    Override model for report phase
 
 Options for 'stop':
   CLEAN=true             Remove all data including volumes
@@ -45,6 +51,16 @@ Examples:
   ./shannon start URL=https://example.com REPO=repo-name
   ./shannon start URL=https://example.com REPO=repo-name CONFIG=./config.yaml
   ./shannon start URL=https://example.com REPO=repo-name OUTPUT=./my-reports
+
+  # Local Ollama (zero cost)
+  ./shannon start URL=https://example.com REPO=repo-name OLLAMA=true
+
+  # Hybrid: Ollama default, Claude for report
+  ./shannon start URL=https://example.com REPO=repo-name OLLAMA=true MODEL_REPORT=anthropic,claude-sonnet-4-5-20250929
+
+  # OpenRouter
+  ./shannon start URL=https://example.com REPO=repo-name ROUTER=true ROUTER_DEFAULT=openrouter,qwen/qwen3-32b
+
   ./shannon logs ID=example.com_shannon-1234567890
   ./shannon query ID=shannon-1234567890
   ./shannon stop CLEAN=true
@@ -66,6 +82,13 @@ parse_args() {
       PIPELINE_TESTING=*) PIPELINE_TESTING="${arg#PIPELINE_TESTING=}" ;;
       REBUILD=*) REBUILD="${arg#REBUILD=}" ;;
       ROUTER=*) ROUTER="${arg#ROUTER=}" ;;
+      OLLAMA=*) OLLAMA="${arg#OLLAMA=}" ;;
+      ROUTER_DEFAULT=*) ROUTER_DEFAULT="${arg#ROUTER_DEFAULT=}" ;;
+      MODEL_PRE_RECON=*) MODEL_PRE_RECON="${arg#MODEL_PRE_RECON=}" ;;
+      MODEL_RECON=*) MODEL_RECON="${arg#MODEL_RECON=}" ;;
+      MODEL_VULNERABILITY=*) MODEL_VULNERABILITY="${arg#MODEL_VULNERABILITY=}" ;;
+      MODEL_EXPLOITATION=*) MODEL_EXPLOITATION="${arg#MODEL_EXPLOITATION=}" ;;
+      MODEL_REPORT=*) MODEL_REPORT="${arg#MODEL_REPORT=}" ;;
     esac
   done
 }
@@ -124,14 +147,18 @@ cmd_start() {
     exit 1
   fi
 
-  # Check for API key (router mode can use alternative provider API keys)
+  # Check for API key (router/Ollama mode can use alternative provider API keys)
   if [ -z "$ANTHROPIC_API_KEY" ] && [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-    if [ "$ROUTER" = "true" ] && { [ -n "$OPENAI_API_KEY" ] || [ -n "$OPENROUTER_API_KEY" ]; }; then
+    if [ "$OLLAMA" = "true" ]; then
+      # Ollama mode — no Anthropic key needed, set placeholder for SDK init
+      export ANTHROPIC_API_KEY="router-mode"
+    elif [ "$ROUTER" = "true" ] && { [ -n "$OPENAI_API_KEY" ] || [ -n "$OPENROUTER_API_KEY" ]; }; then
       # Router mode with alternative provider - set a placeholder for SDK init
       export ANTHROPIC_API_KEY="router-mode"
     else
       echo "ERROR: Set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in .env"
       echo "       (or use ROUTER=true with OPENAI_API_KEY or OPENROUTER_API_KEY)"
+      echo "       (or use OLLAMA=true for local Ollama)"
       exit 1
     fi
   fi
@@ -162,6 +189,27 @@ cmd_start() {
     chmod 777 "$OUTPUT"
     export OUTPUT_DIR="$OUTPUT"
   fi
+
+  # Handle OLLAMA flag — sets up router mode pointing at local Ollama
+  if [ "$OLLAMA" = "true" ]; then
+    ROUTER="true"
+    export ROUTER_DEFAULT="${ROUTER_DEFAULT:-ollama,qwen3:32b}"
+    export OLLAMA_API_KEY="${OLLAMA_API_KEY:-ollama}"
+
+    # Check Ollama reachability
+    if curl -s --max-time 3 http://localhost:11434/api/tags >/dev/null 2>&1; then
+      echo "Ollama detected at localhost:11434"
+    else
+      echo "WARNING: Ollama not reachable at localhost:11434 — ensure it is running"
+    fi
+  fi
+
+  # Export per-phase MODEL_* env vars for docker-compose passthrough
+  [ -n "$MODEL_PRE_RECON" ] && export MODEL_PRE_RECON
+  [ -n "$MODEL_RECON" ] && export MODEL_RECON
+  [ -n "$MODEL_VULNERABILITY" ] && export MODEL_VULNERABILITY
+  [ -n "$MODEL_EXPLOITATION" ] && export MODEL_EXPLOITATION
+  [ -n "$MODEL_REPORT" ] && export MODEL_REPORT
 
   # Handle ROUTER flag - start claude-code-router for multi-model support
   if [ "$ROUTER" = "true" ]; then

@@ -75,6 +75,13 @@ import type { AgentName } from '../types/agents.js';
 import type { AgentMetrics } from './shared.js';
 import type { DistributedConfig } from '../types/config.js';
 import type { SessionMetadata } from '../audit/utils.js';
+import {
+  resolveModelForAgent,
+  activateProvider,
+  buildModelRoutingFromEnv,
+  validateParallelPhaseConsistency,
+} from '../ai/router-utils.js';
+import type { ModelRouting } from '../types/config.js';
 
 const HEARTBEAT_INTERVAL_MS = 2000; // Must be < heartbeatTimeout (10min production, 5min testing)
 
@@ -129,6 +136,8 @@ async function runAgentActivity(
     heartbeat({ agent: agentName, elapsedSeconds: elapsed, attempt: attemptNumber });
   }, HEARTBEAT_INTERVAL_MS);
 
+  let restoreEnv: (() => void) | null = null;
+
   try {
     // 1. Load config (if provided)
     let distributedConfig: DistributedConfig | null = null;
@@ -140,6 +149,23 @@ async function runAgentActivity(
         throw new Error(`Failed to load config ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+
+    // 1.5. Resolve model routing (config takes precedence over env vars)
+    const modelRouting: ModelRouting | null =
+      distributedConfig?.modelRouting ?? buildModelRoutingFromEnv();
+
+    if (modelRouting) {
+      validateParallelPhaseConsistency(modelRouting);
+    }
+
+    const modelSpec = resolveModelForAgent(agentName, modelRouting);
+    restoreEnv = activateProvider(modelSpec);
+
+    console.log(
+      chalk.gray(
+        `    Model routing: ${agentName} → ${modelSpec.provider}/${modelSpec.model}`
+      )
+    );
 
     // 2. Build session metadata for audit
     const sessionMetadata: SessionMetadata = {
@@ -176,12 +202,15 @@ async function runAgentActivity(
       chalk.cyan,
       sessionMetadata,
       auditSession,
-      attemptNumber
+      attemptNumber,
+      modelSpec.provider !== 'anthropic' ? modelSpec.model : undefined
     );
 
     // 6.5. Sanity check: Detect spending cap that slipped through all detection layers
     // Defense-in-depth: A successful agent execution should never have ≤2 turns with $0 cost
-    if (result.success && (result.turns ?? 0) <= 2 && (result.cost || 0) === 0) {
+    // Skip for routed providers — they always report $0 cost, causing false positives
+    const isRoutedProvider = modelSpec.provider !== 'anthropic';
+    if (!isRoutedProvider && result.success && (result.turns ?? 0) <= 2 && (result.cost || 0) === 0) {
       const resultText = result.result || '';
       const looksLikeBillingError = /spending|cap|limit|budget|resets/i.test(resultText);
 
@@ -300,6 +329,7 @@ async function runAgentActivity(
     }
   } finally {
     clearInterval(heartbeatInterval);
+    restoreEnv?.();
   }
 }
 

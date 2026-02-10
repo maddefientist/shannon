@@ -16,7 +16,11 @@ import type {
   Rules,
   Authentication,
   DistributedConfig,
+  ModelPhase,
+  ModelRouting,
+  ModelSpec,
 } from './types/config.js';
+import { parseModelSpec } from './ai/router-utils.js';
 
 // Handle ESM/CJS interop for ajv-formats using require
 const require = createRequire(import.meta.url);
@@ -150,9 +154,9 @@ const validateConfig = (config: Config): void => {
   }
 
   // Ensure at least some configuration is provided
-  if (!config.rules && !config.authentication) {
+  if (!config.rules && !config.authentication && !config.models) {
     console.warn(
-      '⚠️  Configuration file contains no rules or authentication. The pentest will run without any scoping restrictions or login capabilities.'
+      '⚠️  Configuration file contains no rules, authentication, or models. The pentest will run without any scoping restrictions or login capabilities.'
     );
   } else if (config.rules && !config.rules.avoid && !config.rules.focus) {
     console.warn(
@@ -325,16 +329,48 @@ const sanitizeRule = (rule: Rule): Rule => {
   };
 };
 
+// Parse the models config section into a typed ModelRouting object
+const parseModelsConfig = (config: Config): ModelRouting | null => {
+  if (!config.models) return null;
+
+  const defaultStr = config.models.default;
+  const defaultSpec = defaultStr ? parseModelSpec(defaultStr) : null;
+
+  const phases: Partial<Record<ModelPhase, ModelSpec>> = {};
+  let hasPhaseOverrides = false;
+
+  if (config.models.phases) {
+    for (const [phase, specStr] of Object.entries(config.models.phases)) {
+      if (specStr) {
+        const spec = parseModelSpec(specStr);
+        if (spec) {
+          phases[phase as ModelPhase] = spec;
+          hasPhaseOverrides = true;
+        }
+      }
+    }
+  }
+
+  if (!defaultSpec && !hasPhaseOverrides) return null;
+
+  return {
+    default: defaultSpec ?? { provider: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
+    phases,
+  };
+};
+
 // Distribute configuration sections to different agents with sanitization
 export const distributeConfig = (config: Config | null): DistributedConfig => {
   const avoid = config?.rules?.avoid || [];
   const focus = config?.rules?.focus || [];
   const authentication = config?.authentication || null;
+  const modelRouting = config ? parseModelsConfig(config) : null;
 
   return {
     avoid: avoid.map(sanitizeRule),
     focus: focus.map(sanitizeRule),
     authentication: authentication ? sanitizeAuthentication(authentication) : null,
+    modelRouting,
   };
 };
 

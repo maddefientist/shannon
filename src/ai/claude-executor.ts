@@ -203,7 +203,8 @@ export async function runClaudePrompt(
   colorFn: ChalkInstance = chalk.cyan,
   sessionMetadata: SessionMetadata | null = null,
   auditSession: AuditSession | null = null,
-  attemptNumber: number = 1
+  attemptNumber: number = 1,
+  modelOverride?: string
 ): Promise<ClaudePromptResult> {
   const timer = new Timer(`agent-${description.toLowerCase().replace(/\s+/g, '-')}`);
   const fullPrompt = context ? `${context}\n\n${prompt}` : prompt;
@@ -219,7 +220,7 @@ export async function runClaudePrompt(
 
   const mcpServers = buildMcpServers(sourceDir, agentName);
   const options = {
-    model: 'claude-sonnet-4-5-20250929',
+    model: modelOverride || 'claude-sonnet-4-5-20250929',
     maxTurns: 10_000,
     cwd: sourceDir,
     permissionMode: 'bypassPermissions' as const,
@@ -255,7 +256,9 @@ export async function runClaudePrompt(
     // Defense-in-depth: Detect spending cap that slipped through detectApiError().
     // When spending cap is hit, Claude returns a short message with $0 cost.
     // Legitimate agent work NEVER costs $0 with only 1-2 turns.
-    if (turnCount <= 2 && totalCost === 0) {
+    // Skip for routed providers — they always report $0 cost, causing false positives.
+    const isRoutedProvider = !!process.env.ANTHROPIC_BASE_URL;
+    if (!isRoutedProvider && turnCount <= 2 && totalCost === 0) {
       const resultLower = (result || '').toLowerCase();
       const BILLING_KEYWORDS = ['spending', 'cap', 'limit', 'budget', 'resets'];
       const looksLikeBillingError = BILLING_KEYWORDS.some((kw) =>

@@ -50,9 +50,31 @@ export interface Authentication {
   success_condition: SuccessCondition;
 }
 
+/** Provider + model pair, parsed from "provider,model" strings */
+export interface ModelSpec {
+  provider: 'anthropic' | 'openai' | 'openrouter' | 'ollama';
+  model: string;
+}
+
+/** Pipeline phases for model routing (parallel agents share the same phase) */
+export type ModelPhase = 'pre-recon' | 'recon' | 'vulnerability' | 'exploitation' | 'report';
+
+/** Per-phase model overrides with a default fallback */
+export interface ModelRouting {
+  default: ModelSpec;
+  phases: Partial<Record<ModelPhase, ModelSpec>>;
+}
+
+/** Raw models section from YAML config (strings before parsing) */
+export interface ModelsConfig {
+  default?: string;
+  phases?: Partial<Record<ModelPhase, string>>;
+}
+
 export interface Config {
   rules?: Rules;
   authentication?: Authentication;
+  models?: ModelsConfig;
   login?: unknown; // Deprecated
 }
 
@@ -60,4 +82,5 @@ export interface DistributedConfig {
   avoid: Rule[];
   focus: Rule[];
   authentication: Authentication | null;
+  modelRouting: ModelRouting | null;
 }
