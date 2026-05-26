@@ -118,11 +118,11 @@ cd shannon
 # 2. Configure credentials (choose one method)
 
 # Option A: Export environment variables
-export ANTHROPIC_API_KEY="your-api-key"              # or CLAUDE_CODE_OAUTH_TOKEN
+export ANTHROPIC_API_KEY=<YOUR_VALUE>"              # or CLAUDE_CODE_OAUTH_TOKEN
 
 # Option B: Create a .env file
 cat > .env << 'EOF'
-ANTHROPIC_API_KEY=your-api-key
+ANTHROPIC_API_KEY=<YOUR_VALUE>
 EOF
 
 # 3. Run a pentest
@@ -230,7 +230,7 @@ authentication:
   credentials:
     username: "test@example.com"
     password: "yourpassword"
-    totp_secret: "REDACTED_EXAMPLE"  # Optional for 2FA
+    totp_secret: <YOUR_VALUE>"  # Optional for 2FA
 
   login_flow:
     - "Type $username into the email field"
@@ -269,9 +269,9 @@ Shannon can experimentally route requests through alternative AI providers using
 
 ```bash
 # Choose one provider:
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=<YOUR_VALUE>
 # OR
-OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_API_KEY=<YOUR_VALUE>
 
 # Set default model:
 ROUTER_DEFAULT=openai,gpt-5.2  # provider,model format
