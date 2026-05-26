@@ -5,3 +5,5 @@ dist/
 repos/
 xben-benchmark-results/
 *.log
+
+sample-reports/
